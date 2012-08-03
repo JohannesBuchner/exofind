@@ -9,15 +9,12 @@ lib = cdll.LoadLibrary('exo.so')
 from ctypes import *
 
 # put data into double[n][3] array
-print 'loading data...'
 data = numpy.loadtxt(sys.argv[1])
-print 'shape: ', data.shape
 cdata = ((c_double * 3) * data.shape[0])()
 for i in range(data.shape[0]):
 	for j in range(3):
 		cdata[i][j] = data[i,j]
 lib.set_data(cdata, data.shape[0])
-print 'done loading. can run now.'
 
 def plot(a, parameters):
 	import matplotlib.pyplot as plt
@@ -49,7 +46,6 @@ def plot(a, parameters):
 		y = ylim[0] + 0.05*(ylim[1] - ylim[0])
 		center = m['median']
 		low1, high1 = m['1sigma']
-		print center, low1, high1
 		newax.errorbar(x=center, y=y,
 			xerr=numpy.transpose([[center - low1, high1 - center]]), 
 			color='blue', linewidth=2, marker='s')
@@ -80,15 +76,13 @@ def run(n_planets):
 	for i in range(n_planets):
 		parameters += ['%s%d' % (var, i) for var in ['P', 'K', 'chi', 'e', 'omega']]
 	n_params = len(parameters)
-	print dir(lib)
 	params_low = (c_double * n_params)()
 	params_high = (c_double * n_params)()
 	for i, p in enumerate(parameters):
-		print '  init', i, p
 		if p.startswith('V'):
 			params_low[i], params_high[i] = -2000., +2000.
 		if p.startswith('P'):
-			params_low[i], params_high[i] = 0.2, 1000.
+			params_low[i], params_high[i] = 0.2, 10000.
 		if p.startswith('K'):
 			params_low[i], params_high[i] = 1., 20000
 		if p.startswith('chi'):
@@ -100,12 +94,12 @@ def run(n_planets):
 		if p.startswith('s'):
 			params_low[i], params_high[i] = 1., 2000
 	lib.set_param_limits(params_low, params_high)
-	print 'n_params', n_params
-	lib.check(n_params)
+	#print 'n_params', n_params
+	#lib.check(n_params)
 	
 	lib.LogLike.restype = c_double
 	
-	pymultinest.run(lib.LogLike, None, n_params, outputfiles_basename='%d-' % n_planets, resume = True, verbose = True, sampling_efficiency = 'model', n_live_points = 1000, max_modes=1000)
+	pymultinest.run(lib.LogLike, None, n_params, outputfiles_basename='%d-' % n_planets, resume = True, verbose = False, sampling_efficiency = 'model', n_live_points = 2000, max_modes=1000, evidence_tolerance = 2)
 	
 	# lets analyse the results
 	a = pymultinest.Analyzer(n_params = n_params, outputfiles_basename='%d-' % n_planets)
@@ -114,14 +108,35 @@ def run(n_planets):
 	import json
 	json.dump(parameters, file('%sparams.json' % a.outputfiles_basename, 'w'), indent=2)
 	json.dump(s, file('%s.json' % a.outputfiles_basename, 'w'), indent=2)
-	plot(a, parameters)
+	#plot(a, parameters)
 	return ( s['global evidence'], s['global evidence error'] )
 
+def evidence(diff):
+	if diff > math.log(100):
+		return 'decisive'
+	if diff > math.log(30):
+		return 'very strong'
+	if diff > math.log(10):
+		return 'strong'
+	return 'indifferent'
 
 # number of planets
 n = 0 # start value, we'll increase it later
 
-print run(0)
+ev, everr = run(0)
+while True:
+	n = n + 1
+	evnext, evnexterr = run(n)
+	print evnext, evnexterr, ev, everr
+	if evnext - evnexterr > ev + everr + math.log(10):
+		print "%d planets preferred over %d" % (n, n - 1)
+		print "evidence difference: %s" % evidence((evnext - evnexterr - (ev + everr)))
+	elif evnext + evnexterr > ev - everr + math.log(10):
+		print "%d planned could be preferred over %d if accuracy was better" % (n, n - 1)
+	else:
+		print "stick with %d planets, %d are not preferred" % (n - 1, n)
+		break
+	ev, everr = evnext, evnexterr
 
-print run(1)
+
 

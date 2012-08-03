@@ -10,4 +10,6 @@ exo.so: exo.o interpol.o rungekutta.o
 %.o: %.c
 	${CC} ${CFLAGS} $^ -o $@ -c
 
+testexo: testexo.c exo.o interpol.o rungekutta.o
+	${CC} ${CFLAGS} ${LFLAGS} $^ -pg -g -o $@ -lgsl
 

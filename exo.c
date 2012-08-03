@@ -10,7 +10,9 @@
 #endif
 
 #define gsl_matrix_get(data, i, j) data[i*3 + j]
-
+/*
+#define USE_RK4
+*/
 struct planetorbit {
 	double P;
 	double e;
@@ -50,7 +52,7 @@ double LogPrior(double c, double xmin, double xmax){
 	double log_max = log(xmax);
 	return exp(log_min + c * (log_max - log_min));
 }
-double ModLogPrior(double c, double xmax, double xturn) {
+double ModLogPrior(double c, double xturn, double xmax) {
 	return xturn * (exp( (c + 1e-10) * log(xmax/xturn + 1)) - 1);
 }
 
@@ -127,14 +129,76 @@ void check(int ndim) {
 	}
 }
 
+const double D2S = 60*60*24;
+
+// this function calculates eccentric anomaly
+double ecc_anomaly(double time, double prd, double ecc, double peri_pass)
+{
+	time = time * D2S;
+	double T = prd * D2S;
+	double n = 2 * M_PI / T;
+	double tau = peri_pass * T;
+	double M = n * (time + tau);
+	double E0; // start value
+	double Mstar;// check equation  6.6.9 Danby
+	double sigma;
+	int  int_M2PI;
+	// to get an interger value for M/(2*PI)
+	// so that for M we have a value between 0 and 2PI
+	int_M2PI = M / (2 * M_PI);
+	Mstar = M - int_M2PI * 2 * M_PI;
+
+	// define a SIGN function
+	sigma = fabs(sin(Mstar));
+
+	E0 = Mstar + sigma * 0.85 * ecc;
+	// the value for k=0.85 is arbitrary
+	// the only condition is 0<= k <=1 check, again Danby   
+
+	double TINY = 1e-6;
+	int count = 0;
+	for(count = 0; count < 100; count++) {
+		double eSinE = ecc * sin(E0);    // a dummy
+		double f = E0 - eSinE - Mstar;
+		if (fabs(f) < TINY)
+			break;
+		double eCosE = ecc * cos(E0);
+		double f1 = 1 - eCosE;
+		double f2 = eSinE;
+		double f3 = eCosE;
+		double dE0 = -f / f1;
+		dE0 = -f / (f1 + 0.5 * dE0 * f2);
+		dE0 = -f / (f1 + 0.5 * dE0 * f2 + dE0 * dE0 * f3 / 6);
+		E0 = E0 + dE0;
+	}
+
+	return E0;
+}
+
+double true_anomaly(double time, double prd, double ecc, double peri_pass)
+{
+	double E = ecc_anomaly(time,prd,ecc,peri_pass);
+	double f = acos((cos(E) - ecc) / (1 - ecc * cos(E)));
+	//acos gives the principal values ie [0:PI]
+	//when E goes above PI we need another condition
+	if (E > M_PI)
+		f = 2 * M_PI - f;
+	return f;
+}
+
 double calc(unsigned int n_planets, double ti) {
 	double fi = 0;
 	unsigned int j;
 	
 	for(j = 0; j < n_planets; j++) {
 		current = &planets[j];
+#ifdef USE_RK4
 		fi += current->K * (cos(theta_eval(ti + current->chi * current->P) 
 			+ current->omega) + current->e * cos(current->omega));
+#else
+		fi += current->K * (sin(true_anomaly(ti, current->P, current->e, current->chi) 
+			+ current->omega) + current->e * sin(current->omega));
+#endif
 	}
 	
 	return fi;
@@ -159,7 +223,7 @@ unsigned int set_params(double *params, int ndim) {
 	/*V     = params[0]; */
 	i++;
 	
-	if (ndim > n_planets * 5 + 1) {
+	if (ndim > (signed) n_planets * 5 + 1) {
 		params[i] = ModLogPrior(params[i], params_low[i], params_high[i]);
 		s     = params[i++];
 	} else {
@@ -188,7 +252,9 @@ unsigned int set_params(double *params, int ndim) {
 		params[i] = UniformPrior(params[i], params_low[i], params_high[i]);
 		current->omega = params[i++] * M_PI * 2;
 
+#ifdef USE_RK4
 		theta_setup();
+#endif
 	}
 	return n_planets;
 }
@@ -205,6 +271,12 @@ double LogLike(double *params, int ndim, int npars) {
 	double prob = 0;
 	double V = params[0];
 	
+	for (i = 1; i < n_planets; i++) {
+		/* avoid double solutions, by making sure the periods 
+		 * are sorted in increasing order */
+		if (planets[i].P < planets[i - 1].P)
+			return -1e300;
+	}
 	for (i = 0; i < n_data; i++) {
 		ti   = gsl_matrix_get(data,i,0);
 		vi   = gsl_matrix_get(data,i,1);
