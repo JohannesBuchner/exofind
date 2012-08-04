@@ -9,7 +9,8 @@ lib = cdll.LoadLibrary('exo.so')
 from ctypes import *
 
 # put data into double[n][3] array
-data = numpy.loadtxt(sys.argv[1])
+filename = sys.argv[1]
+data = numpy.loadtxt(filename)
 cdata = ((c_double * 3) * data.shape[0])()
 for i in range(data.shape[0]):
 	for j in range(3):
@@ -68,11 +69,14 @@ def plot(a, parameters):
 	plt.savefig(prefix + 'marg.pdf')
 	plt.close()
 
+def mkdir(path):
+	if not os.path.exists(path): os.mkdir(path)
+
 def run(n_planets):
 	# number of dimensions our problem has
 	parameters = ['V'] 
 	# plus possibly a noise term 
-	# parameters += ['s']
+	parameters += ['s']
 	for i in range(n_planets):
 		parameters += ['%s%d' % (var, i) for var in ['P', 'K', 'chi', 'e', 'omega']]
 	n_params = len(parameters)
@@ -90,7 +94,7 @@ def run(n_planets):
 		if p.startswith('e'):
 			params_low[i], params_high[i] = 0., 1.
 		if p.startswith('omega'):
-			params_low[i], params_high[i] = 0., 1.
+			params_low[i], params_high[i] = 0., 2 * math.pi
 		if p.startswith('s'):
 			params_low[i], params_high[i] = 1., 2000
 	lib.set_param_limits(params_low, params_high)
@@ -99,16 +103,24 @@ def run(n_planets):
 	
 	lib.LogLike.restype = c_double
 	
-	pymultinest.run(lib.LogLike, None, n_params, outputfiles_basename='%d-' % n_planets, resume = True, verbose = False, sampling_efficiency = 'model', n_live_points = 2000, max_modes=1000, evidence_tolerance = 2)
+	mkdir(filename + '.out')
+	basename = filename + '.out/%d/' % n_planets
+	mkdir(basename)
+	
+	pymultinest.run(lib.LogLike, None, n_params, resume = True, verbose = False, 
+		outputfiles_basename=basename, sampling_efficiency = 'model', 
+		n_live_points = 2000, max_modes=1000, evidence_tolerance = math.log(5))
 	
 	# lets analyse the results
-	a = pymultinest.Analyzer(n_params = n_params, outputfiles_basename='%d-' % n_planets)
+	a = pymultinest.Analyzer(n_params = n_params, outputfiles_basename=basename)
 	s = a.get_stats()
 
 	import json
 	json.dump(parameters, file('%sparams.json' % a.outputfiles_basename, 'w'), indent=2)
 	json.dump(s, file('%s.json' % a.outputfiles_basename, 'w'), indent=2)
-	#plot(a, parameters)
+	print 'plotting ...'
+	plot(a, parameters)
+	print 'plotting done.'
 	return ( s['global evidence'], s['global evidence error'] )
 
 def evidence(diff):
@@ -127,7 +139,6 @@ ev, everr = run(0)
 while True:
 	n = n + 1
 	evnext, evnexterr = run(n)
-	print evnext, evnexterr, ev, everr
 	if evnext - evnexterr > ev + everr + math.log(10):
 		print "%d planets preferred over %d" % (n, n - 1)
 		print "evidence difference: %s" % evidence((evnext - evnexterr - (ev + everr)))
@@ -137,6 +148,24 @@ while True:
 		print "stick with %d planets, %d are not preferred" % (n - 1, n)
 		break
 	ev, everr = evnext, evnexterr
+
+# write out marginal posteriors in a nice way
+#   calculate pdf on a_s * sin i = K*T*(1-e^2)**0.5 / 2 / pi
+#   calculate pdf on m_p * sin i = K*mstar^(2/3)*T^(1/3)*(1-e^2)**0.5 / 2 / pi / G
+#   calculate pdf on a = mstar^(1/3) * T^(2/3) * G
+
+# ?  calculate pdf of m_p / mstar using an assumption on sin i
+
+# write out nice html / latex table of discovered planet system
+
+# go through all params with associated prob. p(params)
+# go through all times when observation could be made
+# go through all observations that could be made at that time with the given params (proportional to its probability): p(y|params, time)
+# search time that maximizes 
+#    \sum{ log( p(y|params, time) ) * p(y|params, time) * p(params) }
+#     - \sum{  log( p(y|time) ) * p(y|time)  dy  }
+
+
 
 
 

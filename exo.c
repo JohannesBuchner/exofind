@@ -196,8 +196,8 @@ double calc(unsigned int n_planets, double ti) {
 		fi += current->K * (cos(theta_eval(ti + current->chi * current->P) 
 			+ current->omega) + current->e * cos(current->omega));
 #else
-		fi += current->K * (sin(true_anomaly(ti, current->P, current->e, current->chi) 
-			+ current->omega) + current->e * sin(current->omega));
+		fi += current->K * (cos(true_anomaly(ti, current->P, current->e, current->chi) 
+			+ current->omega) + current->e * cos(current->omega));
 #endif
 	}
 	
@@ -250,7 +250,7 @@ unsigned int set_params(double *params, int ndim) {
 		current->e     = params[i++];
 		/* omega */
 		params[i] = UniformPrior(params[i], params_low[i], params_high[i]);
-		current->omega = params[i++] * M_PI * 2;
+		current->omega = params[i++];
 
 #ifdef USE_RK4
 		theta_setup();
