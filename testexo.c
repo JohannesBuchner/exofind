@@ -31,11 +31,6 @@ int main(int argc, char ** argv) {
 }
 */
 
-extern double * params_low;
-extern double * params_high;
-extern double * data;
-extern unsigned int n_data;
-
 double low[100] = {-2000, 0.2, 1, 0, 0, 0, 0.2, 1, 0, 0, 0};
 double high[100] = {2000, 10000, 20000, 1, 1, 1, 10000, 20000, 1, 1, 1};
 double newdata[1000] = {
@@ -75,11 +70,11 @@ double newdata[1000] = {
 	1969.759840, 16.300000, 2.200000
 };
 
+void set_param_limits(double * new_params_low, double * new_params_high);
+void set_data(double * new_data, int new_n_data);
 void setup_data() {
-	params_low = low;
-	params_high = high;
-	data = newdata;
-	n_data = 34;
+	set_param_limits(low, high);
+	set_data(newdata, 34);
 }
 
 extern void check(int ndim);

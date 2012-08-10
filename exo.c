@@ -196,8 +196,8 @@ double calc(unsigned int n_planets, double ti) {
 		fi += current->K * (cos(theta_eval(ti + current->chi * current->P) 
 			+ current->omega) + current->e * cos(current->omega));
 #else
-		fi += current->K * (cos(true_anomaly(ti, current->P, current->e, current->chi) 
-			+ current->omega) + current->e * cos(current->omega));
+		fi += current->K * (sin(true_anomaly(ti, current->P, current->e, current->chi) 
+			+ current->omega + M_PI) + current->e * sin(current->omega + M_PI));
 #endif
 	}
 	
@@ -259,6 +259,30 @@ unsigned int set_params(double *params, int ndim) {
 	return n_planets;
 }
 
+int planets_are_sorted(unsigned int n_planets, int ndim) {
+	unsigned int i;
+	unsigned int j = 1;
+	double lastp = planets[0].P;
+	if (n_planets == 0)
+		return 0;
+	if (ndim > (signed) n_planets * 5 + 1) {
+		j = 2;
+	}
+	for (i = 1; i < n_planets; i++) {
+		/* avoid the planets that have been forced to a range */
+		if (params_low[i * 5 + j] / params_high[i * 5 + j] < 100) {
+			continue;
+		}
+		
+		/* avoid double solutions, by making sure the periods 
+		 * are sorted in increasing order */
+		if (planets[i].P < lastp)
+			return 1;
+		lastp = planets[i].P;
+	}
+	return 0;
+}
+
 double LogLike(double *params, int ndim, int npars) {
 	unsigned int n_planets = set_params(params, ndim);
 	unsigned int i;
@@ -271,12 +295,9 @@ double LogLike(double *params, int ndim, int npars) {
 	double prob = 0;
 	double V = params[0];
 	
-	for (i = 1; i < n_planets; i++) {
-		/* avoid double solutions, by making sure the periods 
-		 * are sorted in increasing order */
-		if (planets[i].P < planets[i - 1].P)
-			return -1e300;
-	}
+	if (planets_are_sorted(n_planets, ndim) != 0) 
+		return -1e300;
+	
 	for (i = 0; i < n_data; i++) {
 		ti   = gsl_matrix_get(data,i,0);
 		vi   = gsl_matrix_get(data,i,1);
@@ -298,12 +319,21 @@ double LogLike(double *params, int ndim, int npars) {
 	}
 	
 	prob += log(2 * M_PI) * n_data;
-	/*
-	for (i = 0; (signed)i < ndim; i++) {
+	/*for (i = 0; (signed)i < ndim; i++) {
 		printf("  %.3f \t", params[i]);
 	}
 	printf(" --> %f\n", prob);*/
 	
-	return prob / 2;
+	return prob;
+}
+
+void predict(double *params, int ndim, int npars, int n_data, double * x, double * y) {
+	unsigned int n_planets = set_params(params, ndim);
+	unsigned int i;
+	double V = params[0];
+	
+	for (i = 0; i < n_data; i++) {
+		y[i] = V + calc(n_planets, x[i]);
+	}
 }
 
