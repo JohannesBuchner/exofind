@@ -9,6 +9,8 @@
 #define M_PI           3.14159265358979323846
 #endif
 
+#define NOISE
+
 #define gsl_matrix_get(data, i, j) data[i*3 + j]
 /*
 #define USE_RK4
@@ -219,12 +221,16 @@ unsigned int set_params(double *params, int ndim) {
 
 	/* V prior: uniform improper */
 	/* (17) priors */
+	#ifdef USE_PRIORS
 	params[i] = UniformPrior(params[i], params_low[i], params_high[i]);
+	#endif
 	/*V     = params[0]; */
 	i++;
 	
 	if (ndim > (signed) n_planets * 5 + 1) {
+		#ifdef USE_PRIORS
 		params[i] = ModLogPrior(params[i], params_low[i], params_high[i]);
+		#endif
 		s     = params[i++];
 	} else {
 		s     = 0;
@@ -234,22 +240,32 @@ unsigned int set_params(double *params, int ndim) {
 		current = &planets[j];
 
 		/* P prior: jeffreys */
+		#ifdef USE_PRIORS
 		params[i] = LogPrior(params[i], params_low[i], params_high[i]);
+		#endif
 		current->P     = params[i++]; /* days */
 		
 		/* K prior: mod jeffreys */
+		#ifdef USE_PRIORS
 		params[i] = ModLogPrior(params[i], params_low[i], params_high[i]);
+		#endif
 		current->K     = params[i++];
 
 		/* Chi prior */
+		#ifdef USE_PRIORS
 		params[i] = UniformPrior(params[i], params_low[i], params_high[i]);
+		#endif
 		current->chi   = params[i++];
 
 		/* e */
+		#ifdef USE_PRIORS
 		params[i] = UniformPrior(params[i], params_low[i], params_high[i]);
+		#endif
 		current->e     = params[i++];
 		/* omega */
+		#ifdef USE_PRIORS
 		params[i] = UniformPrior(params[i], params_low[i], params_high[i]);
+		#endif
 		current->omega = params[i++];
 
 #ifdef USE_RK4
@@ -294,9 +310,12 @@ double LogLike(double *params, int ndim, int npars) {
 	double vari;
 	double prob = 0;
 	double V = params[0];
+	#ifdef NOISE
+	double s = params[1];
+	#endif
 	
-	if (planets_are_sorted(n_planets, ndim) != 0) 
-		return -1e300;
+	/*if (planets_are_sorted(n_planets, ndim) != 0) 
+		return -1e300;*/
 	
 	for (i = 0; i < n_data; i++) {
 		ti   = gsl_matrix_get(data,i,0);
